@@ -1,0 +1,111 @@
+name: Publish build challenge sites
+
+# Publishes ONLY the build folders that contain an index.html to GitHub Pages.
+# Everything else in the repository (PROMPTS.md, JOURNAL.md, agent-notes.md,
+# bc0b-app/person.md, scripts, config) is never published, and the repository
+# itself stays private. See PUBLISH.md.
+#
+# Pages must already be enabled for the repository (build type "workflow").
+# The workflow token cannot enable it; the instructor runs
+# docs/deploy/enable-pages.sh once per repository.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'bc0-space-invaders/**'
+      - 'bc0b-app/**'
+      - 'shipday/**'
+      - 'capstone/**'
+      - '.publish/**'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    # The course template itself never publishes.
+    if: github.repository != 'agentic-systems-fall-2026/agentic-systems-course-fall-2026'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Collect only the folders that are meant to be public
+        run: |
+          set -euo pipefail
+          SITE="${RUNNER_TEMP}/site"          # fresh directory outside the checkout
+          rm -rf "$SITE"; mkdir -p "$SITE"
+          for d in bc0-space-invaders bc0b-app shipday capstone; do
+            if [ -L "$d" ]; then
+              echo "::error::$d is a symbolic link; a link can point outside the folder, so nothing is published"; exit 1
+            fi
+            [ -d "$d" ] || { echo "skipping $d (no such folder)"; continue; }
+            if find "$d" -type l -not -path '*/node_modules/*' | grep -q .; then
+              echo "::error::$d contains symbolic links, which can expose files from outside the folder:"
+              find "$d" -type l -not -path '*/node_modules/*'
+              exit 1
+            fi
+            if [ -f "$d/index.html" ]; then
+              echo "publishing $d"
+              mkdir -p "$SITE/$d"
+              # regular files only: no symlinks (the upload step would dereference them), no specials
+              (cd "$d" && find . -type f \
+                  -not -iname '*.md' -not -iname '.env*' \
+                  -not -path '*/node_modules/*' -not -path '*/.git/*' -print0) \
+                | (cd "$d" && xargs -0 -I{} cp --parents --no-dereference -- {} "$SITE/$d/")
+            else
+              echo "skipping $d (no index.html)"
+            fi
+          done
+          shopt -s nullglob
+          {
+            printf '<!doctype html><meta charset="utf-8"><title>Build challenge sites</title>'
+            printf '<h1>Build challenge sites</h1><ul>'
+            for d in "$SITE"/*/; do
+              [ -d "$d" ] || continue
+              n=$(basename "$d")
+              printf '<li><a href="%s/">%s</a></li>' "$n" "$n"
+            done
+            printf '</ul>'
+          } > "$SITE/index.html"
+          printf '%s\n' "$GITHUB_SHA" > "$SITE/version.txt"
+          touch "$SITE/.nojekyll"
+          if find "$SITE" -not -type f -not -type d | grep -q .; then
+            echo "::error::non-regular files in the site tree"; find "$SITE" -not -type f -not -type d; exit 1
+          fi
+          echo "site inventory:"; (cd "$SITE" && find . -type f | sort)
+      - name: Refuse to publish anything that looks like a key
+        run: |
+          set +e
+          hits=$(grep -ralE \
+            -e 'sk-or-v1-[A-Za-z0-9]{8,}' \
+            -e 'sk-ant-[A-Za-z0-9_-]{8,}' \
+            -e 'sk-proj-[A-Za-z0-9_-]{8,}' \
+            -e 'AKIA[0-9A-Z]{16}' \
+            -e 'gh[pousr]_[A-Za-z0-9]{20,}' \
+            -e '^[[:space:]]*(export[[:space:]]+)?(OPENROUTER_API_KEY|LITELLM_API_KEY|ANTHROPIC_API_KEY|OPENAI_API_KEY|GITHUB_TOKEN)[[:space:]]*=[[:space:]]*["'"'"']?[A-Za-z0-9_-]{12,}' \
+            "${RUNNER_TEMP}/site" 2>&1); rc=$?
+          if [ $rc -eq 0 ]; then echo "::error::these files look like they contain an API key; nothing was published"; echo "$hits"; exit 1; fi
+          if [ $rc -ne 1 ]; then echo "::error::key scan failed: $hits"; exit 1; fi
+          echo "no keys found"
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: ${{ runner.temp }}/site
+
+  deploy:
+    if: github.repository != 'agentic-systems-fall-2026/agentic-systems-course-fall-2026'
+    needs: build
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

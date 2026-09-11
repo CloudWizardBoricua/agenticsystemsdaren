@@ -1,6 +1,6 @@
 # Agentic Systems Course Repo — SDI 4243/5243 (OU, Fall 2026)
 
-[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/agentic-systems-fall-2026/agentic-systems-course-fall-2026)
+[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/CloudWizardBoricua/agenticsystemsdaren)
 
 Your personal course repository. Everything you build this semester lives here:
 five Build Challenges, your prompts, your Build Journal, and a CI eval gate. By
