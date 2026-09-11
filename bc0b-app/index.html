@@ -1,0 +1,926 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OpsPriority — Task Priority Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #0b0f19;
+      --card-bg: #111827;
+      --card-border: #1f2937;
+      --card-hover: #1e293b;
+      --text-main: #f3f4f6;
+      --text-muted: #9ca3af;
+      --text-subtle: #6b7280;
+      --accent: #3b82f6;
+      --accent-glow: rgba(59, 130, 246, 0.25);
+      --high: #ef4444;
+      --high-bg: rgba(239, 68, 68, 0.15);
+      --med: #f59e0b;
+      --med-bg: rgba(245, 158, 11, 0.15);
+      --low: #10b981;
+      --low-bg: rgba(16, 185, 129, 0.15);
+      --overdue: #f43f5e;
+      --radius: 12px;
+      --radius-sm: 8px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+      background-color: var(--bg);
+      color: var(--text-main);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      padding: 1.25rem;
+      line-height: 1.5;
+    }
+
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+      width: 100%;
+    }
+
+    header {
+      margin-bottom: 2rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-weight: 700;
+      padding: 0.2rem 0.6rem;
+      border-radius: 999px;
+      background: rgba(59, 130, 246, 0.15);
+      color: #60a5fa;
+      border: 1px solid rgba(59, 130, 246, 0.3);
+      width: fit-content;
+    }
+
+    h1 {
+      font-size: 1.85rem;
+      font-weight: 800;
+      letter-spacing: -0.025em;
+      color: #fff;
+    }
+
+    .subtitle {
+      color: var(--text-muted);
+      font-size: 0.95rem;
+    }
+
+    /* Stats bar */
+    .metrics-bar {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+      gap: 0.75rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .metric-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius);
+      padding: 0.85rem 1rem;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .metric-label {
+      font-size: 0.75rem;
+      color: var(--text-subtle);
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+
+    .metric-value {
+      font-size: 1.4rem;
+      font-weight: 800;
+      font-family: 'JetBrains Mono', monospace;
+      color: #fff;
+      margin-top: 0.15rem;
+    }
+
+    /* Form section */
+    .form-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius);
+      padding: 1.25rem;
+      margin-bottom: 2rem;
+      box-shadow: 0 4px 20px -2px rgba(0,0,0,0.4);
+    }
+
+    .form-title {
+      font-size: 1.05rem;
+      font-weight: 700;
+      margin-bottom: 1rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: 2fr 1fr 1fr 1fr;
+      gap: 0.85rem;
+    }
+
+    @media (max-width: 768px) {
+      .form-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+    }
+
+    label {
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--text-muted);
+    }
+
+    input, select, textarea {
+      background: #0f172a;
+      border: 1px solid #334155;
+      color: var(--text-main);
+      padding: 0.65rem 0.85rem;
+      border-radius: var(--radius-sm);
+      font-size: 0.9rem;
+      font-family: inherit;
+      outline: none;
+      transition: all 0.2s ease;
+    }
+
+    input:focus, select:focus, textarea:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-glow);
+    }
+
+    .btn-row {
+      margin-top: 1rem;
+      display: flex;
+      justify-content: flex-end;
+      gap: 0.75rem;
+    }
+
+    button {
+      font-family: inherit;
+      font-weight: 600;
+      font-size: 0.85rem;
+      padding: 0.65rem 1.2rem;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      border: none;
+      transition: all 0.15s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+
+    .btn-primary {
+      background: var(--accent);
+      color: #fff;
+    }
+
+    .btn-primary:hover {
+      background: #2563eb;
+      transform: translateY(-1px);
+    }
+
+    .btn-secondary {
+      background: #374151;
+      color: var(--text-main);
+    }
+
+    .btn-secondary:hover {
+      background: #4b5563;
+    }
+
+    /* Filter & Controls */
+    .controls-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 1rem;
+      margin-bottom: 1rem;
+    }
+
+    .filter-tabs {
+      display: flex;
+      background: #1e293b;
+      padding: 0.25rem;
+      border-radius: var(--radius-sm);
+      gap: 0.25rem;
+    }
+
+    .filter-btn {
+      background: transparent;
+      color: var(--text-muted);
+      padding: 0.35rem 0.75rem;
+      font-size: 0.8rem;
+      border-radius: 6px;
+    }
+
+    .filter-btn.active {
+      background: var(--accent);
+      color: #fff;
+    }
+
+    /* Task List */
+    .task-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+
+    .task-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius);
+      padding: 1rem 1.25rem;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      transition: all 0.2s ease;
+      position: relative;
+    }
+
+    .task-card:hover {
+      border-color: #374151;
+      transform: translateY(-1px);
+    }
+
+    .task-card.completed {
+      opacity: 0.6;
+      background: #0d131f;
+    }
+
+    .task-card.completed .task-name {
+      text-decoration: line-through;
+      color: var(--text-subtle);
+    }
+
+    /* Rank index / Score pill */
+    .rank-col {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-width: 52px;
+    }
+
+    .score-badge {
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 700;
+      font-size: 0.95rem;
+      padding: 0.3rem 0.6rem;
+      border-radius: var(--radius-sm);
+      text-align: center;
+      width: 100%;
+    }
+
+    .score-high {
+      background: var(--high-bg);
+      color: var(--high);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+    }
+
+    .score-med {
+      background: var(--med-bg);
+      color: var(--med);
+      border: 1px solid rgba(245, 158, 11, 0.3);
+    }
+
+    .score-low {
+      background: var(--low-bg);
+      color: var(--low);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+    }
+
+    .rank-label {
+      font-size: 0.65rem;
+      color: var(--text-subtle);
+      margin-top: 0.2rem;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+
+    .task-checkbox-wrap {
+      display: flex;
+      align-items: center;
+    }
+
+    .custom-checkbox {
+      width: 22px;
+      height: 22px;
+      border: 2px solid #4b5563;
+      border-radius: 6px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #1e293b;
+      transition: all 0.15s ease;
+    }
+
+    .custom-checkbox.checked {
+      background: var(--low);
+      border-color: var(--low);
+    }
+
+    .custom-checkbox svg {
+      display: none;
+      width: 14px;
+      height: 14px;
+      stroke: #fff;
+      stroke-width: 3;
+    }
+
+    .custom-checkbox.checked svg {
+      display: block;
+    }
+
+    .task-main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+      min-width: 0;
+    }
+
+    .task-name {
+      font-weight: 600;
+      font-size: 1rem;
+      color: var(--text-main);
+      word-break: break-word;
+    }
+
+    .task-meta {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.75rem;
+      font-size: 0.78rem;
+      color: var(--text-muted);
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+      padding: 0.15rem 0.5rem;
+      border-radius: 4px;
+      font-weight: 600;
+      font-size: 0.75rem;
+    }
+
+    .pill-high { background: var(--high-bg); color: #f87171; }
+    .pill-med { background: var(--med-bg); color: #fbbf24; }
+    .pill-low { background: var(--low-bg); color: #34d399; }
+
+    .due-date {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+    }
+
+    .due-overdue {
+      color: var(--overdue);
+      font-weight: 700;
+    }
+
+    .task-actions {
+      display: flex;
+      gap: 0.4rem;
+    }
+
+    .icon-btn {
+      background: transparent;
+      color: var(--text-subtle);
+      padding: 0.4rem;
+      border-radius: 6px;
+    }
+
+    .icon-btn:hover {
+      background: #1f2937;
+      color: var(--text-main);
+    }
+
+    .icon-btn.delete:hover {
+      background: var(--high-bg);
+      color: var(--high);
+    }
+
+    /* Empty state */
+    .empty-state {
+      text-align: center;
+      padding: 3.5rem 1rem;
+      background: var(--card-bg);
+      border: 1px dashed var(--card-border);
+      border-radius: var(--radius);
+      color: var(--text-muted);
+    }
+
+    .empty-icon {
+      font-size: 2rem;
+      margin-bottom: 0.75rem;
+    }
+
+    /* Formula explainer */
+    .explainer-box {
+      margin-top: 2rem;
+      padding: 1rem;
+      background: #0d131f;
+      border: 1px solid #1e293b;
+      border-radius: var(--radius);
+      font-size: 0.8rem;
+      color: var(--text-subtle);
+    }
+
+    .explainer-box strong {
+      color: var(--text-muted);
+    }
+
+    @media (max-width: 600px) {
+      body {
+        padding: 0.75rem;
+      }
+      .task-card {
+        padding: 0.85rem;
+        gap: 0.65rem;
+      }
+      .rank-col {
+        min-width: 44px;
+      }
+      .score-badge {
+        font-size: 0.85rem;
+        padding: 0.2rem 0.4rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="badge">Ops & Supply Chain Suite</div>
+      <h1>OpsPriority</h1>
+      <p class="subtitle">Quick decision ranking for high-impact operations & logistics tasks</p>
+    </header>
+
+    <!-- Metrics Header -->
+    <div class="metrics-bar">
+      <div class="metric-card">
+        <span class="metric-label">Active Tasks</span>
+        <span class="metric-value" id="stat-active">0</span>
+      </div>
+      <div class="metric-card">
+        <span class="metric-label">High Priority (Score &gt; 6)</span>
+        <span class="metric-value" id="stat-high" style="color: #f87171;">0</span>
+      </div>
+      <div class="metric-card">
+        <span class="metric-label">Due Soon / Overdue</span>
+        <span class="metric-value" id="stat-due" style="color: #fbbf24;">0</span>
+      </div>
+      <div class="metric-card">
+        <span class="metric-label">Completed</span>
+        <span class="metric-value" id="stat-completed" style="color: #34d399;">0</span>
+      </div>
+    </div>
+
+    <!-- Add / Edit Task Form -->
+    <div class="form-card">
+      <div class="form-title">
+        <span id="form-heading">Add Operational Task</span>
+        <button id="cancel-edit-btn" class="btn-secondary" style="display: none; padding: 0.35rem 0.75rem; font-size: 0.75rem;" onclick="cancelEdit()">Cancel Edit</button>
+      </div>
+      <form id="task-form" onsubmit="handleFormSubmit(event)">
+        <input type="hidden" id="task-id" />
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="task-title">Task / Action Item</label>
+            <input type="text" id="task-title" placeholder="e.g. Approve Q3 freight supplier contract" required />
+          </div>
+          <div class="form-group">
+            <label for="task-impact">Business Impact</label>
+            <select id="task-impact" required>
+              <option value="3">High (Critical Ops/Revenue)</option>
+              <option value="2" selected>Medium (Standard Workflow)</option>
+              <option value="1">Low (Minor / Nice-to-have)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="task-urgency">Urgency / Timeline</label>
+            <select id="task-urgency" required>
+              <option value="3">High (Needs immediate action)</option>
+              <option value="2" selected>Medium (This week)</option>
+              <option value="1">Low (Can wait)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="task-due">Target Due Date</label>
+            <input type="date" id="task-due" />
+          </div>
+        </div>
+        <div class="btn-row">
+          <button type="submit" class="btn-primary" id="submit-btn">
+            <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 4v16m8-8H4"></path></svg>
+            <span id="submit-btn-text">Add to Queue</span>
+          </button>
+        </div>
+      </form>
+    </div>
+
+    <!-- Controls / Filters -->
+    <div class="controls-row">
+      <div class="filter-tabs">
+        <button class="filter-btn active" onclick="setFilter('active')" id="filter-active">Active Queue</button>
+        <button class="filter-btn" onclick="setFilter('all')" id="filter-all">All Tasks</button>
+        <button class="filter-btn" onclick="setFilter('completed')" id="filter-completed">Completed</button>
+      </div>
+      <div style="font-size: 0.8rem; color: var(--text-subtle);">
+        Ranked automatically by <strong>Impact &times; Urgency + Date Bonus</strong>
+      </div>
+    </div>
+
+    <!-- Task List -->
+    <div class="task-list" id="task-container">
+      <!-- Injected via JS -->
+    </div>
+
+    <!-- Logic Explainer Footer -->
+    <div class="explainer-box">
+      <strong>How priority scoring works:</strong> 
+      Base Score = (Impact 1–3) &times; (Urgency 1–3) [Scale 1–9]. 
+      Tasks due today or overdue receive a +1.5 boost. 
+      Tasks due within 48 hours receive a +0.75 boost.
+      Highest scores float to the top so you can focus on the critical few first.
+    </div>
+  </div>
+
+  <script>
+    const STORAGE_KEY = 'opspriority_tasks_v1';
+
+    let tasks = [];
+    let currentFilter = 'active';
+    let editingTaskId = null;
+
+    // Load initial data
+    function init() {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) {
+        try {
+          tasks = JSON.parse(saved);
+        } catch (e) {
+          tasks = [];
+        }
+      } else {
+        // Seed initial example tasks tailored to Tyler's ops & supply chain work
+        tasks = [
+          {
+            id: 'demo-1',
+            title: 'Resolve shipping delay with customs broker for raw materials',
+            impact: 3,
+            urgency: 3,
+            dueDate: getRelativeDateString(0), // Today
+            completed: false,
+            createdAt: Date.now() - 3600000
+          },
+          {
+            id: 'demo-2',
+            title: 'Review Q4 warehouse inventory reorder thresholds',
+            impact: 3,
+            urgency: 2,
+            dueDate: getRelativeDateString(3),
+            completed: false,
+            createdAt: Date.now() - 7200000
+          },
+          {
+            id: 'demo-3',
+            title: 'Audit packaging supplier invoice discrepancies',
+            impact: 2,
+            urgency: 2,
+            dueDate: getRelativeDateString(5),
+            completed: false,
+            createdAt: Date.now() - 10800000
+          },
+          {
+            id: 'demo-4',
+            title: 'Organize archived bill of lading documents',
+            impact: 1,
+            urgency: 1,
+            dueDate: '',
+            completed: true,
+            createdAt: Date.now() - 14400000
+          }
+        ];
+        saveTasks();
+      }
+      render();
+    }
+
+    function getRelativeDateString(offsetDays) {
+      const d = new Date();
+      d.setDate(d.getDate() + offsetDays);
+      return d.toISOString().split('T')[0];
+    }
+
+    function saveTasks() {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
+      renderMetrics();
+    }
+
+    function calculateScore(task) {
+      const impact = Number(task.impact) || 2;
+      const urgency = Number(task.urgency) || 2;
+      let score = impact * urgency;
+
+      // Due date urgency modifier
+      if (task.dueDate && !task.completed) {
+        const today = new Date();
+        today.setHours(0,0,0,0);
+        const due = new Date(task.dueDate + 'T00:00:00');
+        const diffDays = (due - today) / (1000 * 60 * 60 * 24);
+
+        if (diffDays <= 0) {
+          score += 1.5; // Due today or overdue
+        } else if (diffDays <= 2) {
+          score += 0.75; // Due in next 48 hours
+        }
+      }
+
+      return Math.round(score * 10) / 10;
+    }
+
+    function getScoreBadgeClass(score) {
+      if (score >= 6) return 'score-high';
+      if (score >= 4) return 'score-med';
+      return 'score-low';
+    }
+
+    function getPillClass(val) {
+      if (val === 3) return 'pill-high';
+      if (val === 2) return 'pill-med';
+      return 'pill-low';
+    }
+
+    function getLevelLabel(val) {
+      if (val === 3) return 'High';
+      if (val === 2) return 'Med';
+      return 'Low';
+    }
+
+    function formatDue(dateStr) {
+      if (!dateStr) return { text: 'No due date', overdue: false };
+      const today = new Date();
+      today.setHours(0,0,0,0);
+      const due = new Date(dateStr + 'T00:00:00');
+      const diff = Math.round((due - today) / (1000 * 60 * 60 * 24));
+
+      if (diff < 0) {
+        return { text: `Overdue by ${Math.abs(diff)}d (${dateStr})`, overdue: true };
+      }
+      if (diff === 0) {
+        return { text: `Due today!`, overdue: true };
+      }
+      if (diff === 1) {
+        return { text: `Due tomorrow`, overdue: false };
+      }
+      return { text: `Due in ${diff}d (${dateStr})`, overdue: false };
+    }
+
+    function renderMetrics() {
+      const active = tasks.filter(t => !t.completed);
+      const completed = tasks.filter(t => t.completed);
+      
+      const high = active.filter(t => calculateScore(t) >= 6);
+      
+      const today = new Date();
+      today.setHours(0,0,0,0);
+      const dueSoon = active.filter(t => {
+        if (!t.dueDate) return false;
+        const due = new Date(t.dueDate + 'T00:00:00');
+        const diff = (due - today) / (1000 * 60 * 60 * 24);
+        return diff <= 2;
+      });
+
+      document.getElementById('stat-active').innerText = active.length;
+      document.getElementById('stat-high').innerText = high.length;
+      document.getElementById('stat-due').innerText = dueSoon.length;
+      document.getElementById('stat-completed').innerText = completed.length;
+    }
+
+    function render() {
+      renderMetrics();
+      const container = document.getElementById('task-container');
+      container.innerHTML = '';
+
+      // Filter
+      let filtered = tasks.filter(t => {
+        if (currentFilter === 'active') return !t.completed;
+        if (currentFilter === 'completed') return t.completed;
+        return true;
+      });
+
+      // Sort: incomplete first, then by score descending, then by creation date
+      filtered.sort((a, b) => {
+        if (a.completed !== b.completed) {
+          return a.completed ? 1 : -1;
+        }
+        const scoreA = calculateScore(a);
+        const scoreB = calculateScore(b);
+        if (scoreB !== scoreA) return scoreB - scoreA;
+        return (b.createdAt || 0) - (a.createdAt || 0);
+      });
+
+      if (filtered.length === 0) {
+        container.innerHTML = `
+          <div class="empty-state">
+            <div class="empty-icon">🎉</div>
+            <div style="font-weight: 700; color: #fff; margin-bottom: 0.25rem;">No tasks in this view</div>
+            <div style="font-size: 0.85rem;">${currentFilter === 'active' ? 'All operational tasks are cleared or none added yet.' : 'No items match your filter.'}</div>
+          </div>
+        `;
+        return;
+      }
+
+      filtered.forEach((task, index) => {
+        const score = calculateScore(task);
+        const scoreClass = getScoreBadgeClass(score);
+        const dueInfo = formatDue(task.dueDate);
+
+        const card = document.createElement('div');
+        card.className = `task-card ${task.completed ? 'completed' : ''}`;
+        
+        card.innerHTML = `
+          <div class="rank-col">
+            <div class="score-badge ${scoreClass}">${score.toFixed(1)}</div>
+            <div class="rank-label">${task.completed ? 'Done' : '#' + (index + 1)}</div>
+          </div>
+
+          <div class="task-checkbox-wrap" onclick="toggleTaskStatus('${task.id}')">
+            <div class="custom-checkbox ${task.completed ? 'checked' : ''}" title="${task.completed ? 'Mark Active' : 'Mark Complete'}">
+              <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>
+            </div>
+          </div>
+
+          <div class="task-main">
+            <div class="task-name">${escapeHtml(task.title)}</div>
+            <div class="task-meta">
+              <span class="pill ${getPillClass(Number(task.impact))}">Impact: ${getLevelLabel(Number(task.impact))}</span>
+              <span class="pill ${getPillClass(Number(task.urgency))}">Urgency: ${getLevelLabel(Number(task.urgency))}</span>
+              <span class="due-date ${dueInfo.overdue && !task.completed ? 'due-overdue' : ''}">
+                <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                ${dueInfo.text}
+              </span>
+            </div>
+          </div>
+
+          <div class="task-actions">
+            <button class="icon-btn" onclick="startEdit('${task.id}')" title="Edit Task">
+              <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+            </button>
+            <button class="icon-btn delete" onclick="deleteTask('${task.id}')" title="Delete Task">
+              <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+            </button>
+          </div>
+        `;
+
+        container.appendChild(card);
+      });
+    }
+
+    function handleFormSubmit(e) {
+      e.preventDefault();
+      const titleInput = document.getElementById('task-title');
+      const impactSelect = document.getElementById('task-impact');
+      const urgencySelect = document.getElementById('task-urgency');
+      const dueInput = document.getElementById('task-due');
+
+      const title = titleInput.value.trim();
+      if (!title) return;
+
+      if (editingTaskId) {
+        // Update existing
+        const task = tasks.find(t => t.id === editingTaskId);
+        if (task) {
+          task.title = title;
+          task.impact = Number(impactSelect.value);
+          task.urgency = Number(urgencySelect.value);
+          task.dueDate = dueInput.value;
+        }
+        editingTaskId = null;
+        document.getElementById('form-heading').innerText = 'Add Operational Task';
+        document.getElementById('submit-btn-text').innerText = 'Add to Queue';
+        document.getElementById('cancel-edit-btn').style.display = 'none';
+      } else {
+        // Create new
+        const newTask = {
+          id: 'task-' + Date.now(),
+          title: title,
+          impact: Number(impactSelect.value),
+          urgency: Number(urgencySelect.value),
+          dueDate: dueInput.value,
+          completed: false,
+          createdAt: Date.now()
+        };
+        tasks.push(newTask);
+      }
+
+      saveTasks();
+      render();
+
+      // Reset form
+      document.getElementById('task-form').reset();
+      document.getElementById('task-impact').value = "2";
+      document.getElementById('task-urgency').value = "2";
+    }
+
+    function toggleTaskStatus(id) {
+      const task = tasks.find(t => t.id === id);
+      if (task) {
+        task.completed = !task.completed;
+        saveTasks();
+        render();
+      }
+    }
+
+    function startEdit(id) {
+      const task = tasks.find(t => t.id === id);
+      if (!task) return;
+
+      editingTaskId = id;
+      document.getElementById('task-title').value = task.title;
+      document.getElementById('task-impact').value = task.impact;
+      document.getElementById('task-urgency').value = task.urgency;
+      document.getElementById('task-due').value = task.dueDate || '';
+
+      document.getElementById('form-heading').innerText = 'Edit Operational Task';
+      document.getElementById('submit-btn-text').innerText = 'Save Changes';
+      document.getElementById('cancel-edit-btn').style.display = 'inline-block';
+
+      document.getElementById('task-title').focus();
+    }
+
+    function cancelEdit() {
+      editingTaskId = null;
+      document.getElementById('task-form').reset();
+      document.getElementById('task-impact').value = "2";
+      document.getElementById('task-urgency').value = "2";
+      document.getElementById('form-heading').innerText = 'Add Operational Task';
+      document.getElementById('submit-btn-text').innerText = 'Add to Queue';
+      document.getElementById('cancel-edit-btn').style.display = 'none';
+    }
+
+    function deleteTask(id) {
+      if (confirm('Delete this task?')) {
+        tasks = tasks.filter(t => t.id !== id);
+        if (editingTaskId === id) {
+          cancelEdit();
+        }
+        saveTasks();
+        render();
+      }
+    }
+
+    function setFilter(filter) {
+      currentFilter = filter;
+      document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.remove('active'));
+      document.getElementById(`filter-${filter}`).classList.add('active');
+      render();
+    }
+
+    function escapeHtml(str) {
+      const div = document.createElement('div');
+      div.innerText = str;
+      return div.innerHTML;
+    }
+
+    // Initialize on page load
+    window.onload = init;
+  </script>
+</body>
+</html>
