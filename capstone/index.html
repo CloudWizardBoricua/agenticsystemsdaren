@@ -2,85 +2,180 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="theme-color" content="#082f49">
-  <meta name="description" content="Boricua Street Parking — a two-level Puerto Rico-inspired parking challenge.">
+  <meta name="description" content="Boricua Street Parking — Puerto Rico arcade parking experience.">
   <title>Boricua Street Parking</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <main class="game-shell" aria-label="Boricua Street Parking game">
+  <div class="app-container">
+    <!-- Header Topbar -->
     <header class="topbar">
-      <div class="brand"><span class="flag-mark" aria-hidden="true">★</span><div><h1>Boricua Street Parking</h1><p id="locationLabel">Viejo San Juan · Day Shift</p></div></div>
-      <div class="hud" aria-live="polite">
-        <div><span class="hud-label">LEVEL</span><strong id="levelHud">1 / 2</strong></div>
-        <div><span class="hud-label">PARKS</span><strong id="parkHud">0 / 3</strong></div>
-        <div><span class="hud-label">TIME</span><strong id="timeHud">0:00</strong></div>
+      <div class="brand">
+        <div class="flag-circle" aria-hidden="true">★</div>
+        <div class="brand-text">
+          <h1>Boricua Street Parking</h1>
+          <span id="levelSubtitle" class="sub-badge">Viejo San Juan · Level 1</span>
+        </div>
       </div>
-      <nav class="actions" aria-label="Game controls">
-        <button id="soundBtn" class="icon-btn" type="button" aria-label="Toggle sound" aria-pressed="true">♫</button>
-        <button id="helpBtn" class="icon-btn" type="button" aria-label="Show help">?</button>
-        <button id="restartBtn" class="text-btn" type="button">↻ Restart</button>
-      </nav>
+
+      <div class="hud-bar">
+        <div class="hud-item">
+          <span class="hud-title">STOP</span>
+          <span class="hud-val" id="hudObjective">1 / 3</span>
+        </div>
+        <div class="hud-item">
+          <span class="hud-title">TIME</span>
+          <span class="hud-val" id="hudTimer">0:00</span>
+        </div>
+        <div class="hud-item">
+          <span class="hud-title">SPEED</span>
+          <span class="hud-val" id="hudSpeed">0 km/h</span>
+        </div>
+      </div>
+
+      <div class="header-actions">
+        <button id="toggleControlsBtn" class="pill-btn" title="Toggle On-Screen Buttons">🎮 Controls</button>
+        <button id="soundBtn" class="icon-btn" aria-label="Toggle Sound" title="Sound Mute/Unmute">🔊</button>
+        <button id="restartBtn" class="pill-btn danger" title="Restart Level">↻ Restart</button>
+      </div>
     </header>
 
-    <section id="stage" class="stage">
-      <canvas id="gameCanvas" width="1280" height="720" aria-label="Top-down parking game canvas"></canvas>
-      <div class="vignette" aria-hidden="true"></div>
+    <!-- Main Game Canvas Container -->
+    <main class="game-stage" id="stageContainer">
+      <canvas id="gameCanvas" width="1280" height="720"></canvas>
 
-      <aside class="objective-card" aria-live="polite">
-        <span id="objectiveNumber" class="objective-number">01</span>
-        <div><small>CURRENT STOP</small><strong id="objectiveTitle">Calle Fortaleza</strong><span id="objectiveHint">Follow the glowing bay</span></div>
-      </aside>
-
-      <div id="toast" class="toast" role="status" aria-live="assertive"></div>
-
-      <div id="startOverlay" class="overlay visible">
-        <div class="panel hero-panel">
-          <div class="hero-flag" aria-hidden="true"><span>★</span></div>
-          <p class="eyebrow">A PUERTO RICO PARKING STORY</p>
-          <h2>Boricua<br><em>Street Parking</em></h2>
-          <p>Thread a little hatchback through colorful streets, tight corners, and a moonlit coast. Park clean. Take it suave.</p>
-          <button id="startBtn" class="primary-btn" type="button">Start the engine <span>→</span></button>
-          <div class="key-row"><span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> Drive</span><span><kbd>↑</kbd><kbd>←</kbd><kbd>↓</kbd><kbd>→</kbd> Also works</span></div>
+      <!-- Target Navigation Tracker Bubble -->
+      <div class="nav-tracker" id="navTracker">
+        <div class="tracker-arrow" id="trackerArrow">➤</div>
+        <div class="tracker-info">
+          <small id="targetNumber">TARGET 01</small>
+          <strong id="targetName">Calle Fortaleza</strong>
+          <span id="targetDistance">Follow the golden arrow</span>
         </div>
       </div>
 
-      <div id="helpOverlay" class="overlay">
-        <div class="panel help-panel">
-          <button class="close-btn" id="closeHelpBtn" type="button" aria-label="Close help">×</button>
-          <p class="eyebrow">DRIVER'S GUIDE</p><h2>Park like a local</h2>
-          <div class="help-grid">
-            <div><span class="help-icon">↥</span><strong>Accelerate</strong><p>W or ↑. Release to coast naturally.</p></div>
-            <div><span class="help-icon">↧</span><strong>Brake & reverse</strong><p>S or ↓. Steering flips while reversing.</p></div>
-            <div><span class="help-icon">↔</span><strong>Steer</strong><p>A/D or ←/→. Moving cars turn best.</p></div>
-            <div><span class="help-icon">P</span><strong>Park cleanly</strong><p>Fit in the active bay, line up, and stop.</p></div>
+      <!-- Parking Alignment Status Ring -->
+      <div class="parking-meter-hud" id="parkingMeterHud">
+        <div class="meter-label" id="meterLabel">PARKING ZONE DETECTED</div>
+        <div class="meter-bar-track">
+          <div class="meter-bar-fill" id="meterFill"></div>
+        </div>
+        <div class="meter-status" id="meterStatus">Slow down & align vehicle</div>
+      </div>
+
+      <!-- Toast notifications -->
+      <div id="toast" class="toast-popup"></div>
+
+      <!-- START MENU OVERLAY -->
+      <div id="startOverlay" class="game-modal visible">
+        <div class="modal-card hero-card">
+          <div class="pr-flag-badge">
+            <span>★</span>
           </div>
-          <p class="tip">Tip: straighten your wheels and let the speed meter settle before the parking timer completes.</p>
-          <button id="resumeBtn" class="primary-btn" type="button">Back to the street</button>
+          <div class="hero-badge">PUERTO RICO ARCADE</div>
+          <h2>BORICUA<br><span>STREET PARKING</span></h2>
+          <p class="hero-desc">Cruise the vibrant streets of Old San Juan & breezy coastal Piñones. Smooth controls, generous spots, and pure island vibes.</p>
+          
+          <button id="startBtn" class="arcade-btn green">
+            <span class="btn-icon">⚡</span> START DRIVING
+          </button>
+
+          <div class="controls-guide">
+            <div class="guide-item">
+              <span class="guide-key">WASD / ARROWS</span>
+              <span>Desktop Keyboard</span>
+            </div>
+            <div class="guide-item">
+              <span class="guide-key">TOUCH BUTTONS</span>
+              <span>iPhone & Mobile Ready</span>
+            </div>
+          </div>
+
+          <div class="author-credit">
+            Engineered & Developed by <strong>Daren Diaz</strong> 🇵🇷
+          </div>
         </div>
       </div>
 
-      <div id="levelOverlay" class="overlay">
-        <div class="panel level-panel"><p class="eyebrow">NEXT SHIFT</p><div class="level-medal">★</div><h2 id="levelOverlayTitle">Coastal Night Shift</h2><p id="levelOverlayText">Old San Juan is parked. Head east where palms sway and the ocean glows.</p><button id="nextLevelBtn" class="primary-btn" type="button">Drive to the coast <span>→</span></button></div>
+      <!-- LEVEL COMPLETE OVERLAY -->
+      <div id="levelOverlay" class="game-modal">
+        <div class="modal-card">
+          <div class="medal-star">🏆</div>
+          <div class="hero-badge">SHIFT COMPLETED!</div>
+          <h2 id="levelWinTitle">VIEJO SAN JUAN CLEARED!</h2>
+          <p id="levelWinDesc">Great job navigating the historic city streets! Next up: the moonlit coastal kiosks of Piñones.</p>
+          <button id="nextLevelBtn" class="arcade-btn green">
+            CONTINUE TO COAST ➔
+          </button>
+        </div>
       </div>
 
-      <div id="winOverlay" class="overlay">
-        <div class="panel win-panel"><p class="eyebrow">¡WÉPA!</p><div class="win-stars">★ ★ ★</div><h2>Parking legend</h2><p>You handled every calle and coastal bay with Boricua style.</p><div class="result-grid"><div><small>TOTAL TIME</small><strong id="finalTime">0:00</strong></div><div><small>PERFECT PARKS</small><strong>6 / 6</strong></div></div><button id="playAgainBtn" class="primary-btn" type="button">Play again <span>↻</span></button></div>
+      <!-- VICTORY OVERLAY -->
+      <div id="winOverlay" class="game-modal">
+        <div class="modal-card win-card">
+          <div class="win-stars">★★★</div>
+          <div class="hero-badge">¡WÉPA! PARKING CHAMPION</div>
+          <h2>ALL SHIFTS COMPLETE!</h2>
+          <p>You mastered every tight turn, plaza, and coastal bay with authentic Boricua style!</p>
+          <div class="stats-summary">
+            <div class="stat-box">
+              <span>FINAL TIME</span>
+              <strong id="finalTime">0:00</strong>
+            </div>
+            <div class="stat-box">
+              <span>SPOTS PARKED</span>
+              <strong>6 / 6</strong>
+            </div>
+          </div>
+          <button id="playAgainBtn" class="arcade-btn yellow">
+            PLAY AGAIN ↻
+          </button>
+          <div class="author-credit" style="margin-top:1.25rem;">
+            Engineered & Developed by <strong>Daren Diaz</strong>
+          </div>
+        </div>
       </div>
 
-      <div id="touchControls" class="touch-controls" aria-label="Touch driving controls">
-        <div class="touch-steer"><button data-control="left" aria-label="Steer left">◀</button><button data-control="right" aria-label="Steer right">▶</button></div>
-        <div class="touch-pedals"><button data-control="reverse" aria-label="Brake or reverse">▼</button><button class="gas" data-control="forward" aria-label="Accelerate">▲</button></div>
-      </div>
-    </section>
-    <footer><span><i class="legend-dot target"></i> Active parking bay</span><span><i class="legend-dot parked"></i> Completed stop</span><span id="speedReadout">0 km/h</span></footer>
-  </main>
+      <!-- ON-SCREEN TOUCH CONTROLS FOR IPHONE & MOBILE -->
+      <div id="touchControls" class="touch-overlay">
+        <!-- Left Steer Group -->
+        <div class="touch-group steer-group">
+          <button id="btnLeft" class="touch-btn steer-btn" data-control="left" aria-label="Steer Left">
+            <span>◀</span>
+          </button>
+          <button id="btnRight" class="touch-btn steer-btn" data-control="right" aria-label="Steer Right">
+            <span>▶</span>
+          </button>
+        </div>
 
+        <!-- Right Pedal Group -->
+        <div class="touch-group pedal-group">
+          <button id="btnReverse" class="touch-btn pedal-btn reverse-btn" data-control="reverse" aria-label="Reverse and Brake">
+            <span>REVERSE<br>▼</span>
+          </button>
+          <button id="btnForward" class="touch-btn pedal-btn gas-btn" data-control="forward" aria-label="Drive Forward">
+            <span>DRIVE<br>▲</span>
+          </button>
+        </div>
+      </div>
+    </main>
+
+    <!-- Footer Credits -->
+    <footer class="bottom-footer">
+      <span>🇵🇷 <strong>Boricua Street Parking</strong></span>
+      <span>• Follow the glowing yellow spots</span>
+      <span>• Engineered & Developed by <strong>Daren Diaz</strong></span>
+    </footer>
+  </div>
+
+  <script src="js/audio.js"></script>
   <script src="js/input.js"></script>
   <script src="js/levels.js"></script>
   <script src="js/vehicle.js"></script>
-  <script src="js/audio.js"></script>
   <script src="js/game.js"></script>
 </body>
 </html>

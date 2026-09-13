@@ -1,75 +1,685 @@
-/* Boricua Street Parking — rendering, progression, and interface. */
+/* Boricua Street Parking — Rendering, Game Loop, Audio & Navigation HUD. */
 (function () {
   'use strict';
-  const W=1280,H=720,canvas=document.getElementById('gameCanvas'),ctx=canvas.getContext('2d');
-  const $=id=>document.getElementById(id), input=new InputManager(window), audio=new GameAudio();
-  const ui={location:$('locationLabel'),level:$('levelHud'),park:$('parkHud'),time:$('timeHud'),speed:$('speedReadout'),objNo:$('objectiveNumber'),objTitle:$('objectiveTitle'),objHint:$('objectiveHint'),toast:$('toast'),start:$('startOverlay'),help:$('helpOverlay'),levelOver:$('levelOverlay'),win:$('winOverlay'),sound:$('soundBtn'),finalTime:$('finalTime')};
-  let levelIndex=0,targetIndex=0,vehicle=new Vehicle(0,0,0),running=false,paused=true,elapsed=0,parkHold=0,last=performance.now(),toastTimer=0,particles=[],cameraShake=0;
-  let level=GAME_LEVELS[0];
+  const W = 1280, H = 720;
+  const canvas = document.getElementById('gameCanvas');
+  const ctx = canvas.getContext('2d');
+  const $ = id => document.getElementById(id);
 
-  function formatTime(seconds){const s=Math.floor(seconds);return`${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;}
-  function roundedRect(c,x,y,w,h,r){r=Math.min(r,w/2,h/2);c.beginPath();c.roundRect?c.roundRect(x,y,w,h,r):(c.rect(x,y,w,h));}
-  function seedRand(n){const x=Math.sin(n*977.3)*43758.5453;return x-Math.floor(x);}
-  function color(hex,alpha){if(hex[0]==='#'&&hex.length===7){const n=parseInt(hex.slice(1),16);return`rgba(${n>>16},${n>>8&255},${n&255},${alpha})`;}return hex;}
-  function resetLevel(index=levelIndex){levelIndex=index;level=GAME_LEVELS[levelIndex];targetIndex=0;parkHold=0;particles=[];vehicle.reset(level.start);ui.location.textContent=level.subtitle;ui.level.textContent=`${levelIndex+1} / ${GAME_LEVELS.length}`;updateObjective();input.clear();}
-  function updateObjective(){ui.park.textContent=`${targetIndex} / 3`;const t=level.targets[Math.min(targetIndex,2)];ui.objNo.textContent=String(targetIndex+1).padStart(2,'0');ui.objTitle.textContent=t.name;ui.objHint.textContent=t.hint;}
-  function setOverlay(el,show){el.classList.toggle('visible',show);}
-  function setPaused(value){paused=value;input.setEnabled(!value);}
-  function begin(){audio.init();setOverlay(ui.start,false);elapsed=0;running=true;setPaused(false);resetLevel(0);showToast('¡Vamos! Find bay 01');}
-  function restart(){resetLevel(levelIndex);if(!running){running=true;elapsed=0;}setOverlay(ui.help,false);setOverlay(ui.levelOver,false);setOverlay(ui.win,false);setPaused(false);showToast('Shift restarted');}
-  function nextLevel(){setOverlay(ui.levelOver,false);resetLevel(1);setPaused(false);showToast('Night shift — headlights on');}
-  function playAgain(){setOverlay(ui.win,false);elapsed=0;resetLevel(0);setPaused(false);showToast('Back to Viejo San Juan');}
-  function showToast(text){ui.toast.textContent=text;ui.toast.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>ui.toast.classList.remove('show'),1900);}
-  function spawnCelebration(x,y){for(let i=0;i<38;i++)particles.push({x,y,vx:(Math.random()-.5)*230,vy:(Math.random()-.8)*220,life:.8+Math.random()*.7,size:3+Math.random()*4,c:['#22d3c5','#f6c453','#ef3340','#f8fafc'][i%4]});}
-  function completeTarget(t){audio.park();spawnCelebration(t.x+t.w/2,t.y+t.h/2);targetIndex++;parkHold=0;vehicle.speed=0;if(targetIndex<3){updateObjective();showToast(`¡Nítido! Next stop: ${level.targets[targetIndex].name}`);}else{ui.park.textContent='3 / 3';setPaused(true);setTimeout(()=>{if(levelIndex===0){setOverlay(ui.levelOver,true);audio.win();}else{ui.finalTime.textContent=formatTime(elapsed);setOverlay(ui.win,true);audio.win();}},650);}}
+  const input = new InputManager(window);
+  const audio = new GameAudio();
 
-  function update(dt){if(!paused){elapsed+=dt;const axes=input.axis(),hit=vehicle.update(dt,axes,level.obstacles);audio.updateEngine(vehicle.speed,axes.throttle);if(hit&&vehicle.bumpCooldown>.25){audio.bump();cameraShake=5;}
-      const t=level.targets[targetIndex];if(t&&t.vehicle==='player'){const status=vehicle.parkingStatus(t);if(status.valid){parkHold+=dt;if(parkHold>=.72)completeTarget(t);}else parkHold=Math.max(0,parkHold-dt*1.8);}
+  const ui = {
+    location: $('levelSubtitle'),
+    hudObj: $('hudObjective'),
+    hudTimer: $('hudTimer'),
+    hudSpeed: $('hudSpeed'),
+    navTracker: $('navTracker'),
+    trackerArrow: $('trackerArrow'),
+    targetNumber: $('targetNumber'),
+    targetName: $('targetName'),
+    targetDistance: $('targetDistance'),
+    meterHud: $('parkingMeterHud'),
+    meterFill: $('meterFill'),
+    meterStatus: $('meterStatus'),
+    toast: $('toast'),
+    startOverlay: $('startOverlay'),
+    levelOverlay: $('levelOverlay'),
+    winOverlay: $('winOverlay'),
+    finalTime: $('finalTime'),
+    touchControls: $('touchControls'),
+    soundBtn: $('soundBtn'),
+    toggleControlsBtn: $('toggleControlsBtn')
+  };
+
+  let levelIndex = 0;
+  let targetIndex = 0;
+  let vehicle = new Vehicle(0, 0, 0);
+  let running = false;
+  let paused = true;
+  let elapsed = 0;
+  let parkHold = 0;
+  let last = performance.now();
+  let toastTimer = 0;
+  let particles = [];
+  let cameraShake = 0;
+  let showOnScreenButtons = true; // Enabled by default for easy playing
+
+  let level = GAME_LEVELS[0];
+
+  function formatTime(seconds) {
+    const s = Math.floor(seconds);
+    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  }
+
+  function roundedRect(c, x, y, w, h, r) {
+    r = Math.min(r, w / 2, h / 2);
+    c.beginPath();
+    if (c.roundRect) {
+      c.roundRect(x, y, w, h, r);
+    } else {
+      c.rect(x, y, w, h);
     }
-    cameraShake=Math.max(0,cameraShake-dt*20);for(const p of particles){p.x+=p.vx*dt;p.y+=p.vy*dt;p.vy+=180*dt;p.life-=dt;}particles=particles.filter(p=>p.life>0);
-    ui.time.textContent=formatTime(elapsed);ui.speed.textContent=`${Math.round(Math.abs(vehicle.speed)*.16)} km/h`;
   }
 
-  function drawRoad(theme){ctx.fillStyle=theme==='day'?'#53615f':'#243d43';ctx.fillRect(0,0,W,H);
-    ctx.globalAlpha=theme==='day'?.16:.1;for(let i=0;i<190;i++){const x=seedRand(i)*W,y=seedRand(i+400)*H,r=1+seedRand(i+900)*3;ctx.fillStyle=i%3?'#e4e0cf':'#173238';ctx.fillRect(x,y,r,r);}ctx.globalAlpha=1;
-    ctx.setLineDash([22,25]);ctx.strokeStyle=theme==='day'?'rgba(241,218,138,.4)':'rgba(111,180,181,.25)';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(34,480);ctx.lineTo(1246,480);ctx.stroke();ctx.beginPath();ctx.moveTo(450,34);ctx.lineTo(450,686);ctx.stroke();ctx.setLineDash([]);
+  function seedRand(n) {
+    const x = Math.sin(n * 977.3) * 43758.5453;
+    return x - Math.floor(x);
   }
-  function drawSidewalk(o,theme){ctx.fillStyle=theme==='day'?'#d2c6ad':'#607176';ctx.fillRect(o.x-9,o.y-9,o.w+18,o.h+18);ctx.strokeStyle=theme==='day'?'#ab9e85':'#485d62';ctx.lineWidth=2;ctx.strokeRect(o.x-9,o.y-9,o.w+18,o.h+18);ctx.globalAlpha=.16;for(let x=o.x-7;x<o.x+o.w+7;x+=16){ctx.beginPath();ctx.moveTo(x,o.y-8);ctx.lineTo(x,o.y+o.h+8);ctx.stroke();}ctx.globalAlpha=1;}
-  function drawBuilding(o,i,night=false){drawSidewalk(o,night?'night':'day');const palette=night?['#d06d68','#3c7f8a','#b48855','#745a86']:['#ef8a84','#66aeb2','#e9bd68','#a882bd','#75a983'];const base=palette[i%palette.length];ctx.fillStyle=base;ctx.fillRect(o.x,o.y,o.w,o.h);ctx.fillStyle='rgba(0,0,0,.12)';ctx.fillRect(o.x,o.y+o.h-13,o.w,13);ctx.fillStyle=night?'#132b3a':'#f4dcc2';ctx.fillRect(o.x+6,o.y+7,o.w-12,10);
-    const horizontal=o.w>o.h,count=Math.max(2,Math.floor((horizontal?o.w:o.h)/62));for(let n=0;n<count;n++){const wx=horizontal?o.x+22+n*((o.w-44)/(count-1||1)):o.x+18,wy=horizontal?o.y+34:o.y+22+n*((o.h-44)/(count-1||1));ctx.fillStyle=night?(n%2?'#163747':'#f6d782'):'#245773';ctx.fillRect(wx,wy,22,30);ctx.fillStyle='rgba(255,255,255,.3)';ctx.fillRect(wx+9,wy,2,30);ctx.strokeStyle='#f4e1c9';ctx.lineWidth=3;ctx.strokeRect(wx,wy,22,30);
-      ctx.strokeStyle='#293b46';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(wx-5,wy+28);ctx.lineTo(wx-5,wy+39);ctx.lineTo(wx+28,wy+39);ctx.lineTo(wx+28,wy+28);ctx.stroke();for(let b=0;b<4;b++){ctx.beginPath();ctx.moveTo(wx-3+b*10,wy+30);ctx.lineTo(wx-3+b*10,wy+39);ctx.stroke();}}
-    ctx.fillStyle='#1c4050';const dx=o.x+o.w/2-12,dy=o.y+o.h-41;ctx.fillRect(dx,dy,24,41);ctx.fillStyle='#d1a74a';ctx.beginPath();ctx.arc(dx+18,dy+22,2,0,Math.PI*2);ctx.fill();
+
+  function resetLevel(index = levelIndex) {
+    levelIndex = index;
+    level = GAME_LEVELS[levelIndex];
+    targetIndex = 0;
+    parkHold = 0;
+    particles = [];
+    vehicle.reset(level.start);
+    ui.location.textContent = level.subtitle;
+    updateObjective();
+    input.clear();
   }
-  function drawPlaza(o){drawSidewalk(o,'day');ctx.fillStyle='#d8c59c';ctx.fillRect(o.x,o.y,o.w,o.h);ctx.strokeStyle='rgba(122,88,51,.25)';ctx.lineWidth=1;for(let x=o.x;x<o.x+o.w;x+=18){ctx.beginPath();ctx.moveTo(x,o.y);ctx.lineTo(x,o.y+o.h);ctx.stroke();}for(let y=o.y;y<o.y+o.h;y+=18){ctx.beginPath();ctx.moveTo(o.x,y);ctx.lineTo(o.x+o.w,y);ctx.stroke();}drawFountain(o.x+o.w/2,o.y+o.h/2);drawPalm(o.x+30,o.y+30,false,.7);drawPalm(o.x+o.w-30,o.y+o.h-30,false,.7);}
-  function drawFountain(x,y){ctx.fillStyle='#c5d2cb';ctx.beginPath();ctx.ellipse(x,y,38,24,0,0,Math.PI*2);ctx.fill();ctx.fillStyle='#4eb9c3';ctx.beginPath();ctx.ellipse(x,y,30,17,0,0,Math.PI*2);ctx.fill();ctx.fillStyle='#e7e3d2';ctx.fillRect(x-3,y-28,6,30);ctx.beginPath();ctx.arc(x,y-29,8,0,Math.PI*2);ctx.fill();}
-  function drawKiosk(o,i){drawSidewalk(o,'night');const cols=['#d95e69','#ec9d4f','#4ba3a3'];ctx.fillStyle=cols[i%3];ctx.fillRect(o.x,o.y,o.w,o.h);ctx.fillStyle='#132f3e';ctx.fillRect(o.x,o.y,o.w,18);for(let x=o.x;x<o.x+o.w;x+=22){ctx.fillStyle=((x-o.x)/22)%2?'#f7e7cb':'#e9595c';ctx.fillRect(x,o.y+18,12,16);}ctx.fillStyle='#f8d68a';ctx.fillRect(o.x+22,o.y+48,o.w-44,34);ctx.fillStyle='#143142';ctx.fillRect(o.x+27,o.y+53,o.w-54,24);ctx.fillStyle='#f4c75a';ctx.font='900 12px system-ui';ctx.textAlign='center';ctx.fillText(i%2?'SABOR BORICUA':'KIOSKO',o.x+o.w/2,o.y+69);ctx.textAlign='left';}
-  function drawOcean(){const g=ctx.createLinearGradient(0,34,0,139);g.addColorStop(0,'#071d46');g.addColorStop(1,'#087e9d');ctx.fillStyle=g;ctx.fillRect(34,34,1212,105);ctx.strokeStyle='rgba(126,234,237,.32)';ctx.lineWidth=2;for(let y=54;y<130;y+=18){ctx.beginPath();for(let x=35;x<1246;x+=20){ctx.lineTo(x,y+Math.sin(x*.025+y)*4);}ctx.stroke();}ctx.fillStyle='rgba(232,246,238,.8)';ctx.beginPath();ctx.arc(1090,69,23,0,Math.PI*2);ctx.fill();ctx.fillStyle='rgba(232,246,238,.09)';ctx.beginPath();ctx.arc(1090,69,42,0,Math.PI*2);ctx.fill();}
-  function drawPalm(x,y,night=false,scale=1){ctx.save();ctx.translate(x,y);ctx.scale(scale,scale);ctx.strokeStyle=night?'#533c32':'#755037';ctx.lineWidth=8;ctx.lineCap='round';ctx.beginPath();ctx.moveTo(0,22);ctx.quadraticCurveTo(7,0,1,-32);ctx.stroke();ctx.strokeStyle=night?'#23827e':'#36884e';ctx.lineWidth=7;for(let a=-2.8;a<.4;a+=.55){ctx.beginPath();ctx.moveTo(1,-32);ctx.quadraticCurveTo(Math.cos(a)*20, -38+Math.sin(a)*8, Math.cos(a)*34,-31+Math.sin(a)*26);ctx.stroke();}ctx.restore();}
-  function drawLamp(x,y){ctx.strokeStyle='#172a34';ctx.lineWidth=5;ctx.beginPath();ctx.moveTo(x,y+18);ctx.lineTo(x,y-20);ctx.stroke();ctx.fillStyle='#ffe6a2';ctx.shadowColor='#f8cf6b';ctx.shadowBlur=18;ctx.beginPath();ctx.arc(x,y-24,7,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0;}
-  function drawFlag(x,y,scale=.8){ctx.save();ctx.translate(x,y);ctx.scale(scale,scale);ctx.fillStyle='#fff';ctx.fillRect(0,0,54,34);ctx.fillStyle='#ed3446';for(let i=0;i<3;i++)ctx.fillRect(0,i*12,54,6);ctx.fillStyle='#0756a0';ctx.beginPath();ctx.moveTo(0,0);ctx.lineTo(28,17);ctx.lineTo(0,34);ctx.closePath();ctx.fill();ctx.fillStyle='white';ctx.font='14px serif';ctx.fillText('★',5,22);ctx.strokeStyle='#263943';ctx.lineWidth=2;ctx.strokeRect(0,0,54,34);ctx.restore();}
-  function drawPare(x,y,rot=0){ctx.save();ctx.translate(x,y);ctx.rotate(rot);ctx.strokeStyle='#3b4650';ctx.lineWidth=5;ctx.beginPath();ctx.moveTo(0,0);ctx.lineTo(0,39);ctx.stroke();ctx.fillStyle='#d9363e';ctx.beginPath();for(let i=0;i<8;i++){const a=Math.PI/8+i*Math.PI/4,r=21;ctx.lineTo(Math.cos(a)*r,Math.sin(a)*r);}ctx.closePath();ctx.fill();ctx.strokeStyle='white';ctx.lineWidth=2;ctx.stroke();ctx.fillStyle='white';ctx.font='900 8px system-ui';ctx.textAlign='center';ctx.fillText('PARE',0,3);ctx.restore();ctx.textAlign='left';}
-  function drawTainoSun(x,y,alpha=.35){ctx.save();ctx.translate(x,y);ctx.strokeStyle=`rgba(246,196,83,${alpha})`;ctx.lineWidth=3;ctx.beginPath();ctx.arc(0,0,11,0,Math.PI*2);ctx.stroke();for(let i=0;i<8;i++){const a=i*Math.PI/4;ctx.beginPath();ctx.moveTo(Math.cos(a)*16,Math.sin(a)*16);ctx.lineTo(Math.cos(a)*24,Math.sin(a)*24);ctx.stroke();}ctx.beginPath();ctx.arc(-4,-2,1.5,0,7);ctx.arc(4,-2,1.5,0,7);ctx.moveTo(-5,4);ctx.quadraticCurveTo(0,8,5,4);ctx.stroke();ctx.restore();}
-  function drawParkedCar(o,i){const horizontal=o.w>o.h,x=o.x+o.w/2,y=o.y+o.h/2,angle=horizontal?0:Math.PI/2;drawCar(x,y,angle,['#b8434a','#e5bf48','#2c738b','#d9d8c9'][i%4],false,.82);}
-  function drawCar(x,y,angle,paint='#f2c84b',player=false,scale=1){ctx.save();ctx.translate(x,y);ctx.rotate(angle);ctx.scale(scale,scale);ctx.shadowColor='rgba(0,0,0,.38)';ctx.shadowBlur=9;ctx.shadowOffsetY=5;roundedRect(ctx,-47,-27,94,54,14);ctx.fillStyle=paint;ctx.fill();ctx.shadowBlur=0;ctx.fillStyle='rgba(255,255,255,.18)';roundedRect(ctx,-38,-23,75,7,4);ctx.fill();ctx.fillStyle='#142b39';roundedRect(ctx,-23,-23,46,46,9);ctx.fill();ctx.fillStyle='#76a5b7';ctx.fillRect(-17,-21,29,13);ctx.fillStyle='#416a7d';ctx.fillRect(-17,8,29,13);ctx.strokeStyle='#0b1b25';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(-18,0);ctx.lineTo(17,0);ctx.stroke();ctx.fillStyle='#151b1e';for(const wx of [-31,29])for(const wy of [-29,25]){roundedRect(ctx,wx,wy,17,6,2);ctx.fill();}ctx.fillStyle=player?'#fff4bc':'#f0e2aa';ctx.fillRect(41,-18,4,11);ctx.fillRect(41,7,4,11);ctx.fillStyle='#d8474d';ctx.fillRect(-45,-18,4,10);ctx.fillRect(-45,8,4,10);if(player){ctx.fillStyle='#0756a0';ctx.beginPath();ctx.arc(-4,0,8,0,Math.PI*2);ctx.fill();ctx.fillStyle='white';ctx.font='9px serif';ctx.fillText('★',-8,3);}ctx.restore();}
-  function drawTarget(t,index){const active=index===targetIndex,done=index<targetIndex,pulse=.5+.5*Math.sin(performance.now()*.005);ctx.save();ctx.fillStyle=done?'rgba(34,211,197,.2)':active?`rgba(246,196,83,${.13+pulse*.08})`:'rgba(255,255,255,.035)';ctx.fillRect(t.x,t.y,t.w,t.h);ctx.strokeStyle=done?'#22d3c5':active?'#f6c453':'rgba(255,255,255,.17)';ctx.lineWidth=active?4:2;ctx.setLineDash(active?[13,7]:[7,8]);ctx.strokeRect(t.x+3,t.y+3,t.w-6,t.h-6);ctx.setLineDash([]);ctx.fillStyle=done?'#22d3c5':active?'#f6c453':'rgba(255,255,255,.25)';ctx.font='950 22px system-ui';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(done?'✓':String(index+1).padStart(2,'0'),t.x+t.w/2,t.y+t.h/2);if(active&&parkHold>0){ctx.fillStyle='rgba(0,0,0,.55)';ctx.fillRect(t.x,t.y-12,t.w,7);ctx.fillStyle='#22d3c5';ctx.fillRect(t.x,t.y-12,t.w*Math.min(1,parkHold/.72),7);}ctx.restore();}
-  function drawNightGlow(){const g=ctx.createRadialGradient(vehicle.x,vehicle.y,20,vehicle.x,vehicle.y,210);g.addColorStop(0,'rgba(255,232,157,.13)');g.addColorStop(1,'rgba(255,232,157,0)');ctx.fillStyle=g;ctx.fillRect(0,0,W,H);}
-  function render(){ctx.save();if(cameraShake)ctx.translate((Math.random()-.5)*cameraShake,(Math.random()-.5)*cameraShake);drawRoad(level.theme);
-    if(level.theme==='night')drawOcean();
-    level.obstacles.forEach((o,i)=>{if(['edge','wall','oceanWall'].includes(o.kind)){if(o.kind==='wall'){ctx.fillStyle=level.theme==='day'?'#a68d69':'#465d62';ctx.fillRect(o.x,o.y,o.w,o.h);}return;}if(o.kind==='building')drawBuilding(o,i,false);else if(o.kind==='plaza')drawPlaza(o);else if(o.kind==='kiosk')drawKiosk(o,i);else if(o.kind==='parked')drawParkedCar(o,i);});
+
+  function updateObjective() {
+    ui.hudObj.textContent = `${targetIndex + 1} / 3`;
+    const t = level.targets[Math.min(targetIndex, 2)];
+    ui.targetNumber.textContent = `TARGET 0${targetIndex + 1}`;
+    ui.targetName.textContent = t.name;
+    ui.targetDistance.textContent = t.hint;
+  }
+
+  function setOverlay(el, show) {
+    el.classList.toggle('visible', show);
+  }
+
+  function setPaused(value) {
+    paused = value;
+    input.setEnabled(!value);
+  }
+
+  function begin() {
+    audio.init();
+    setOverlay(ui.startOverlay, false);
+    elapsed = 0;
+    running = true;
+    setPaused(false);
+    resetLevel(0);
+    showToast('¡Vamos! Follow the golden arrow to Bay 01');
+  }
+
+  function restart() {
+    resetLevel(levelIndex);
+    if (!running) {
+      running = true;
+      elapsed = 0;
+    }
+    setOverlay(ui.levelOverlay, false);
+    setOverlay(ui.winOverlay, false);
+    setPaused(false);
+    showToast('Shift restarted — ¡Vámonos!');
+  }
+
+  function nextLevel() {
+    setOverlay(ui.levelOverlay, false);
+    resetLevel(1);
+    setPaused(false);
+    showToast('Night shift at Piñones — Headlights on!');
+  }
+
+  function playAgain() {
+    setOverlay(ui.winOverlay, false);
+    elapsed = 0;
+    resetLevel(0);
+    setPaused(false);
+    showToast('Back to Viejo San Juan!');
+  }
+
+  function showToast(text) {
+    ui.toast.textContent = text;
+    ui.toast.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => ui.toast.classList.remove('show'), 2200);
+  }
+
+  function spawnCelebration(x, y) {
+    for (let i = 0; i < 48; i++) {
+      particles.push({
+        x, y,
+        vx: (Math.random() - 0.5) * 260,
+        vy: (Math.random() - 0.8) * 240,
+        life: 0.9 + Math.random() * 0.8,
+        size: 4 + Math.random() * 4,
+        c: ['#38bdf8', '#fbbf24', '#ed3446', '#ffffff', '#10b981'][i % 5]
+      });
+    }
+  }
+
+  function completeTarget(t) {
+    audio.park();
+    spawnCelebration(t.x + t.w / 2, t.y + t.h / 2);
+    targetIndex++;
+    parkHold = 0;
+    vehicle.speed = 0;
+
+    if (targetIndex < 3) {
+      updateObjective();
+      showToast(`¡Nítido! Parked! Next: ${level.targets[targetIndex].name}`);
+    } else {
+      ui.hudObj.textContent = '3 / 3';
+      setPaused(true);
+      setTimeout(() => {
+        if (levelIndex === 0) {
+          setOverlay(ui.levelOverlay, true);
+          audio.win();
+        } else {
+          ui.finalTime.textContent = formatTime(elapsed);
+          setOverlay(ui.winOverlay, true);
+          audio.win();
+        }
+      }, 600);
+    }
+  }
+
+  function update(dt) {
+    if (!paused) {
+      elapsed += dt;
+      const axes = input.axis();
+      const hit = vehicle.update(dt, axes, level.obstacles);
+      audio.updateEngine(vehicle.speed, axes.throttle);
+
+      if (hit && vehicle.bumpCooldown > 0.2) {
+        audio.bump();
+        cameraShake = 4;
+      }
+
+      // Target Tracking and Parking Check
+      const t = level.targets[targetIndex];
+      if (t) {
+        const targetCenterX = t.x + t.w / 2;
+        const targetCenterY = t.y + t.h / 2;
+        
+        // Navigation Arrow Angle Calculation
+        const angleToTarget = Math.atan2(targetCenterY - vehicle.y, targetCenterX - vehicle.x);
+        ui.trackerArrow.style.transform = `rotate(${angleToTarget}rad)`;
+
+        const status = vehicle.parkingStatus(t);
+        
+        // Distance check for meter display
+        const dist = Math.hypot(targetCenterX - vehicle.x, targetCenterY - vehicle.y);
+        if (dist < 180) {
+          ui.meterHud.classList.add('active');
+          if (status.valid) {
+            parkHold += dt;
+            const progress = Math.min(100, Math.round((parkHold / 0.55) * 100)); // Quick 0.55s parking hold
+            ui.meterFill.style.width = `${progress}%`;
+            ui.meterStatus.textContent = 'HOLDING STILL... ¡CASI!';
+            if (parkHold >= 0.55) {
+              completeTarget(t);
+            }
+          } else {
+            parkHold = Math.max(0, parkHold - dt * 2);
+            ui.meterFill.style.width = '20%';
+            if (status.speed > 25) {
+              ui.meterStatus.textContent = 'Slow down vehicle';
+            } else if (!status.centerInside) {
+              ui.meterStatus.textContent = 'Pull inside yellow box';
+            } else {
+              ui.meterStatus.textContent = 'Straighten car slightly';
+            }
+          }
+        } else {
+          ui.meterHud.classList.remove('active');
+          parkHold = 0;
+        }
+      }
+    }
+
+    cameraShake = Math.max(0, cameraShake - dt * 18);
+    for (const p of particles) {
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.vy += 180 * dt;
+      p.life -= dt;
+    }
+    particles = particles.filter(p => p.life > 0);
+
+    ui.hudTimer.textContent = formatTime(elapsed);
+    ui.hudSpeed.textContent = `${Math.round(Math.abs(vehicle.speed) * 0.16)} km/h`;
+  }
+
+  /* --- CANVAS RENDERING (Puerto Rico Procedural Aesthetics) --- */
+
+  function drawRoad(theme) {
+    ctx.fillStyle = theme === 'day' ? '#475569' : '#1e293b';
+    ctx.fillRect(0, 0, W, H);
+
+    // Subtle cobblestone / pavement texture
+    ctx.globalAlpha = theme === 'day' ? 0.15 : 0.08;
+    for (let i = 0; i < 160; i++) {
+      const x = seedRand(i) * W, y = seedRand(i + 300) * H, r = 1 + seedRand(i + 600) * 3;
+      ctx.fillStyle = i % 2 ? '#cbd5e1' : '#0f172a';
+      ctx.fillRect(x, y, r, r);
+    }
+    ctx.globalAlpha = 1;
+
+    // Road lane markings
+    ctx.setLineDash([20, 24]);
+    ctx.strokeStyle = theme === 'day' ? 'rgba(251, 191, 36, 0.45)' : 'rgba(56, 189, 248, 0.3)';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(30, 480);
+    ctx.lineTo(1250, 480);
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(450, 30);
+    ctx.lineTo(450, 690);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  function drawSidewalk(o, theme) {
+    ctx.fillStyle = theme === 'day' ? '#e2e8f0' : '#475569';
+    ctx.fillRect(o.x - 6, o.y - 6, o.w + 12, o.h + 12);
+    ctx.strokeStyle = theme === 'day' ? '#cbd5e1' : '#334155';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(o.x - 6, o.y - 6, o.w + 12, o.h + 12);
+  }
+
+  function drawBuilding(o, i) {
+    drawSidewalk(o, 'day');
+    // Authentic Old San Juan vibrant pastel colors: Coral, Aqua, Ochre, Lilac, Sage
+    const palette = ['#f87171', '#38bdf8', '#fbbf24', '#c084fc', '#4ade80', '#fb923c'];
+    const base = palette[i % palette.length];
+    
+    ctx.fillStyle = base;
+    ctx.fillRect(o.x, o.y, o.w, o.h);
+
+    // Shadow base
+    ctx.fillStyle = 'rgba(0,0,0,0.18)';
+    ctx.fillRect(o.x, o.y + o.h - 12, o.w, 12);
+
+    // Stucco trim
+    ctx.fillStyle = '#fdf4dc';
+    ctx.fillRect(o.x + 6, o.y + 6, o.w - 12, 8);
+
+    // Windows & Spanish colonial balconies
+    const horizontal = o.w > o.h;
+    const count = Math.max(2, Math.floor((horizontal ? o.w : o.h) / 58));
+    for (let n = 0; n < count; n++) {
+      const wx = horizontal ? o.x + 18 + n * ((o.w - 36) / (count - 1 || 1)) : o.x + 16;
+      const wy = horizontal ? o.y + 30 : o.y + 18 + n * ((o.h - 36) / (count - 1 || 1));
+      
+      ctx.fillStyle = '#0f172a';
+      ctx.fillRect(wx, wy, 20, 26);
+      ctx.fillStyle = 'rgba(255,255,255,0.35)';
+      ctx.fillRect(wx + 8, wy, 2, 26);
+      ctx.strokeStyle = '#fef08a';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(wx, wy, 20, 26);
+
+      // Balcony railing
+      ctx.strokeStyle = '#1e293b';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(wx - 4, wy + 20, 28, 10);
+    }
+  }
+
+  function drawPlaza(o) {
+    drawSidewalk(o, 'day');
+    ctx.fillStyle = '#fef3c7';
+    ctx.fillRect(o.x, o.y, o.w, o.h);
+
+    // Fountain
+    const fx = o.x + o.w / 2, fy = o.y + o.h / 2;
+    ctx.fillStyle = '#94a3b8';
+    ctx.beginPath();
+    ctx.arc(fx, fy, 28, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = '#38bdf8';
+    ctx.beginPath();
+    ctx.arc(fx, fy, 22, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Palm trees in plaza
+    drawPalm(o.x + 28, o.y + 28, false, 0.7);
+    drawPalm(o.x + o.w - 28, o.y + o.h - 28, false, 0.7);
+  }
+
+  function drawKiosk(o, i) {
+    drawSidewalk(o, 'night');
+    const cols = ['#ef4444', '#f59e0b', '#06b6d4'];
+    ctx.fillStyle = cols[i % 3];
+    ctx.fillRect(o.x, o.y, o.w, o.h);
+
+    // Kiosk striped canopy
+    for (let x = o.x; x < o.x + o.w; x += 18) {
+      ctx.fillStyle = ((x - o.x) / 18) % 2 ? '#fef08a' : '#dc2626';
+      ctx.fillRect(x, o.y, 10, 16);
+    }
+
+    // Lit storefront
+    ctx.fillStyle = '#fef08a';
+    ctx.fillRect(o.x + 16, o.y + 36, o.w - 32, 28);
+    ctx.fillStyle = '#0f172a';
+    ctx.font = '700 11px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(i % 2 ? 'FRITURAS' : 'KIOSKO', o.x + o.w / 2, o.y + 54);
+    ctx.textAlign = 'left';
+  }
+
+  function drawOcean() {
+    const g = ctx.createLinearGradient(0, 30, 0, 125);
+    g.addColorStop(0, '#0c4a6e');
+    g.addColorStop(1, '#0284c7');
+    ctx.fillStyle = g;
+    ctx.fillRect(30, 30, 1220, 95);
+
+    // Gentle waves
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
+    ctx.lineWidth = 2;
+    for (let y = 48; y < 120; y += 16) {
+      ctx.beginPath();
+      for (let x = 32; x < 1240; x += 18) {
+        ctx.lineTo(x, y + Math.sin(x * 0.03 + y) * 3);
+      }
+      ctx.stroke();
+    }
+
+    // Glowing Moon
+    ctx.fillStyle = '#fef08a';
+    ctx.beginPath();
+    ctx.arc(1100, 65, 20, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  function drawPalm(x, y, night = false, scale = 1) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.scale(scale, scale);
+
+    // Trunk
+    ctx.strokeStyle = night ? '#78350f' : '#92400e';
+    ctx.lineWidth = 7;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(0, 20);
+    ctx.quadraticCurveTo(6, 0, 1, -28);
+    ctx.stroke();
+
+    // Fronds
+    ctx.strokeStyle = night ? '#059669' : '#16a34a';
+    ctx.lineWidth = 6;
+    for (let a = -2.6; a < 0.4; a += 0.5) {
+      ctx.beginPath();
+      ctx.moveTo(1, -28);
+      ctx.quadraticCurveTo(Math.cos(a) * 18, -34 + Math.sin(a) * 8, Math.cos(a) * 32, -26 + Math.sin(a) * 22);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function drawFlag(x, y, scale = 0.75) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.scale(scale, scale);
+    
+    // Stripes
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, 52, 32);
+    ctx.fillStyle = '#ed3446';
+    for (let i = 0; i < 3; i++) ctx.fillRect(0, i * 11, 52, 5.5);
+    
+    // Blue Triangle
+    ctx.fillStyle = '#0050a4';
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(26, 16);
+    ctx.lineTo(0, 32);
+    ctx.closePath();
+    ctx.fill();
+
+    // White Star
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '13px sans-serif';
+    ctx.fillText('★', 4, 21);
+    
+    ctx.strokeStyle = '#334155';
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(0, 0, 52, 32);
+    ctx.restore();
+  }
+
+  function drawPare(x, y, rot = 0) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(rot);
+    
+    // Post
+    ctx.strokeStyle = '#64748b';
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(0, 32);
+    ctx.stroke();
+
+    // Octagon
+    ctx.fillStyle = '#ef4444';
+    ctx.beginPath();
+    for (let i = 0; i < 8; i++) {
+      const a = Math.PI / 8 + i * Math.PI / 4, r = 18;
+      ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '900 8px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('PARE', 0, 3);
+    ctx.restore();
+    ctx.textAlign = 'left';
+  }
+
+  function drawParkedCar(o, i) {
+    const horizontal = o.w > o.h;
+    const x = o.x + o.w / 2, y = o.y + o.h / 2;
+    const angle = horizontal ? 0 : Math.PI / 2;
+    drawCar(x, y, angle, ['#ef4444', '#3b82f6', '#10b981', '#f59e0b'][i % 4], false, 0.82);
+  }
+
+  function drawCar(x, y, angle, paint = '#fbbf24', player = false, scale = 1) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(angle);
+    ctx.scale(scale, scale);
+
+    // Car Shadow
+    ctx.shadowColor = 'rgba(0,0,0,0.45)';
+    ctx.shadowBlur = 10;
+    ctx.shadowOffsetY = 4;
+
+    // Body
+    roundedRect(ctx, -41, -23, 82, 46, 10);
+    ctx.fillStyle = paint;
+    ctx.fill();
+    ctx.shadowBlur = 0;
+
+    // Roof & Windshields
+    ctx.fillStyle = '#0f172a';
+    roundedRect(ctx, -20, -19, 40, 38, 6);
+    ctx.fill();
+
+    ctx.fillStyle = '#38bdf8';
+    ctx.fillRect(-14, -17, 26, 10); // Front windshield
+    ctx.fillRect(-14, 7, 26, 10);  // Rear windshield
+
+    // Wheels
+    ctx.fillStyle = '#020617';
+    for (const wx of [-26, 24]) {
+      for (const wy of [-25, 21]) {
+        roundedRect(ctx, wx, wy, 14, 5, 2);
+        ctx.fill();
+      }
+    }
+
+    // Headlights & Taillights
+    ctx.fillStyle = player ? '#fef08a' : '#fef9c3';
+    ctx.fillRect(36, -15, 4, 9);
+    ctx.fillRect(36, 6, 4, 9);
+
+    ctx.fillStyle = '#ef4444';
+    ctx.fillRect(-40, -15, 3, 8);
+    ctx.fillRect(-40, 7, 3, 8);
+
+    if (player) {
+      // Puerto Rico Star Roof Decal
+      ctx.fillStyle = '#0050a4';
+      ctx.beginPath();
+      ctx.arc(-2, 0, 7, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#ffffff';
+      ctx.font = '8px sans-serif';
+      ctx.fillText('★', -5, 3);
+    }
+
+    ctx.restore();
+  }
+
+  function drawTarget(t, index) {
+    const active = index === targetIndex;
+    const done = index < targetIndex;
+    const pulse = 0.5 + 0.5 * Math.sin(performance.now() * 0.006);
+
+    ctx.save();
+    ctx.fillStyle = done
+      ? 'rgba(16, 185, 129, 0.25)'
+      : active
+      ? `rgba(251, 191, 36, ${0.18 + pulse * 0.12})`
+      : 'rgba(255, 255, 255, 0.05)';
+    ctx.fillRect(t.x, t.y, t.w, t.h);
+
+    ctx.strokeStyle = done ? '#10b981' : active ? '#fbbf24' : 'rgba(255, 255, 255, 0.2)';
+    ctx.lineWidth = active ? 4 : 2;
+    ctx.setLineDash(active ? [12, 6] : [6, 6]);
+    ctx.strokeRect(t.x + 2, t.y + 2, t.w - 4, t.h - 4);
+    ctx.setLineDash([]);
+
+    // Target Number Label
+    ctx.fillStyle = done ? '#10b981' : active ? '#fbbf24' : 'rgba(255, 255, 255, 0.3)';
+    ctx.font = '900 20px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(done ? '✓' : `0${index + 1}`, t.x + t.w / 2, t.y + t.h / 2);
+    ctx.restore();
+  }
+
+  function render() {
+    ctx.save();
+    if (cameraShake) {
+      ctx.translate((Math.random() - 0.5) * cameraShake, (Math.random() - 0.5) * cameraShake);
+    }
+
+    drawRoad(level.theme);
+
+    if (level.theme === 'night') {
+      drawOcean();
+    }
+
+    // Draw Obstacles
+    level.obstacles.forEach((o, i) => {
+      if (['edge', 'wall', 'oceanWall'].includes(o.kind)) return;
+      if (o.kind === 'building') drawBuilding(o, i);
+      else if (o.kind === 'plaza') drawPlaza(o);
+      else if (o.kind === 'kiosk') drawKiosk(o, i);
+      else if (o.kind === 'parked') drawParkedCar(o, i);
+    });
+
+    // Draw Target Parking Bays
     level.targets.forEach(drawTarget);
-    if(level.theme==='day'){drawFlag(314,51,.65);drawFlag(1055,317,.6);drawPare(444,254,.2);drawPare(944,496,-.2);drawTainoSun(770,467,.27);drawPalm(970,245,false,.75);drawPalm(960,510,false,.75);}else{[410,910,1180].forEach((x,i)=>drawPalm(x,190,true,.8+(i%2)*.15));[445,925,1190].forEach(x=>drawLamp(x,453));drawFlag(1045,258,.58);drawPare(465,450,.05);drawTainoSun(650,465,.4);drawNightGlow();}
-    drawCar(vehicle.x,vehicle.y,vehicle.angle,'#f5c84c',true,1);for(const p of particles){ctx.globalAlpha=Math.max(0,p.life);ctx.fillStyle=p.c;ctx.fillRect(p.x,p.y,p.size,p.size);}ctx.globalAlpha=1;ctx.restore();
-  }
-  function frame(now){const dt=Math.min((now-last)/1000,.05);last=now;update(dt);render();requestAnimationFrame(frame);}
-  function resize(){const dpr=Math.min(window.devicePixelRatio||1,2),rect=canvas.getBoundingClientRect();canvas.width=Math.max(1,Math.round(rect.width*dpr));canvas.height=Math.max(1,Math.round(rect.height*dpr));ctx.setTransform(canvas.width/W,0,0,canvas.height/H,0,0);}
-  // Fixed world transform is restored each frame because resizing canvas clears state.
-  function ensureTransform(){ctx.setTransform(canvas.width/W,0,0,canvas.height/H,0,0);}
-  const originalRender=render;render=function(){ensureTransform();originalRender();};
 
-  $('startBtn').addEventListener('click',begin);$('restartBtn').addEventListener('click',restart);$('nextLevelBtn').addEventListener('click',nextLevel);$('playAgainBtn').addEventListener('click',playAgain);
-  $('helpBtn').addEventListener('click',()=>{setOverlay(ui.help,true);setPaused(true);});
-  $('closeHelpBtn').addEventListener('click',()=>{setOverlay(ui.help,false);setPaused(!running);});$('resumeBtn').addEventListener('click',()=>{setOverlay(ui.help,false);setPaused(!running);});
-  ui.sound.addEventListener('click',()=>{const on=audio.toggle();ui.sound.textContent=on?'♫':'♪';ui.sound.setAttribute('aria-pressed',String(on));showToast(on?'Sound on':'Sound off');});
-  document.addEventListener('visibilitychange',()=>{if(document.hidden&&running&&!paused){setOverlay(ui.help,true);setPaused(true);}});input.bindTouch($('touchControls'));window.addEventListener('resize',resize);
-  resetLevel(0);resize();requestAnimationFrame(frame);
+    // Decorative Puerto Rican props
+    if (level.theme === 'day') {
+      drawFlag(320, 50, 0.7);
+      drawFlag(1060, 320, 0.65);
+      drawPare(440, 260, 0.1);
+      drawPalm(970, 240, false, 0.8);
+      drawPalm(960, 510, false, 0.8);
+    } else {
+      [420, 920, 1180].forEach(x => drawPalm(x, 180, true, 0.85));
+      drawFlag(1050, 260, 0.65);
+      drawPare(465, 450, 0.05);
+    }
+
+    // Draw Player Vehicle
+    drawCar(vehicle.x, vehicle.y, vehicle.angle, '#fbbf24', true, 1);
+
+    // Particle Sparks
+    for (const p of particles) {
+      ctx.globalAlpha = Math.max(0, p.life);
+      ctx.fillStyle = p.c;
+      ctx.fillRect(p.x, p.y, p.size, p.size);
+    }
+    ctx.globalAlpha = 1;
+
+    ctx.restore();
+  }
+
+  function frame(now) {
+    const dt = Math.min((now - last) / 1000, 0.05);
+    last = now;
+    update(dt);
+    render();
+    requestAnimationFrame(frame);
+  }
+
+  function resize() {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const rect = canvas.getBoundingClientRect();
+    canvas.width = Math.max(1, Math.round(rect.width * dpr));
+    canvas.height = Math.max(1, Math.round(rect.height * dpr));
+    ctx.setTransform(canvas.width / W, 0, 0, canvas.height / H, 0, 0);
+  }
+
+  function ensureTransform() {
+    ctx.setTransform(canvas.width / W, 0, 0, canvas.height / H, 0, 0);
+  }
+
+  const origRender = render;
+  render = function () {
+    ensureTransform();
+    origRender();
+  };
+
+  // Button Listeners
+  $('startBtn').addEventListener('click', begin);
+  $('restartBtn').addEventListener('click', restart);
+  $('nextLevelBtn').addEventListener('click', nextLevel);
+  $('playAgainBtn').addEventListener('click', playAgain);
+
+  ui.toggleControlsBtn.addEventListener('click', () => {
+    showOnScreenButtons = !showOnScreenButtons;
+    ui.touchControls.style.display = showOnScreenButtons ? 'flex' : 'none';
+    ui.toggleControlsBtn.textContent = showOnScreenButtons ? '🎮 Controls: ON' : '🎮 Controls: OFF';
+    showToast(showOnScreenButtons ? 'On-screen buttons visible' : 'On-screen buttons hidden');
+  });
+
+  ui.soundBtn.addEventListener('click', () => {
+    const on = audio.toggle();
+    ui.soundBtn.textContent = on ? '🔊' : '🔇';
+    showToast(on ? 'Audio enabled' : 'Audio muted');
+  });
+
+  // Bind Touch input for iPhone / Mobile
+  input.bindTouch(ui.touchControls);
+
+  window.addEventListener('resize', resize);
+
+  // Initialize
+  resetLevel(0);
+  resize();
+  requestAnimationFrame(frame);
 })();
